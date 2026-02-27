@@ -4,20 +4,19 @@ import { config } from "./config.js";
 
 export interface TweetDraftInput {
   playlistUrl: string;
-  playlistName: string;
   trackCount: number;
 }
 
 export function writeTweetDraft(input: TweetDraftInput): string {
-  const { playlistUrl, playlistName, trackCount } = input;
+  const { playlistUrl, trackCount } = input;
   const date = new Date().toISOString().split("T")[0];
 
-  const short = `This week's ${trackCount} fave tracks, auto-curated. ${playlistUrl}`;
+  const short = `${trackCount} tracks, DJ-mixed for your Monday morning. ${playlistUrl}`;
 
   const medium = [
-    `${playlistName} just dropped.`,
-    `${trackCount} tracks I liked this week, auto-curated into one playlist.`,
-    `Listen here: ${playlistUrl}`,
+    `Monday Morning Likes just got refreshed.`,
+    `${trackCount} tracks from this week, sorted opener-to-cooldown like a real set.`,
+    `Listen: ${playlistUrl}`,
   ].join("\n");
 
   const content = [

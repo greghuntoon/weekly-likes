@@ -49,13 +49,11 @@ export interface SpotifyTrack {
   id: string;
   name: string;
   artists: string[];
+  artistIds: string[];
+  genres: string[];      // populated after artist genre lookup
   addedAt: string;
-}
-
-export interface SpotifyPlaylist {
-  id: string;
-  name: string;
-  external_urls: { spotify: string };
+  popularity: number;    // 0-100
+  durationMs: number;
 }
 
 export interface SpotifyUser {
@@ -107,7 +105,11 @@ export async function getLikedSongsSince(since: string): Promise<SpotifyTrack[]>
         id: track.id as string,
         name: (track.name as string) ?? "Unknown",
         artists: artists.map((a) => (a.name as string) ?? "Unknown"),
+        artistIds: artists.map((a) => (a.id as string) ?? ""),
+        genres: [],  // filled in by enrichWithGenres
         addedAt,
+        popularity: (track.popularity as number) ?? 50,
+        durationMs: (track.duration_ms as number) ?? 200_000,
       });
     }
 
@@ -118,61 +120,72 @@ export async function getLikedSongsSince(since: string): Promise<SpotifyTrack[]>
   return tracks;
 }
 
-/** Get all playlists owned by userId */
-export async function getUserPlaylists(userId: string): Promise<SpotifyPlaylist[]> {
-  const playlists: SpotifyPlaylist[] = [];
-  let url: string | null = "/me/playlists?limit=50";
-
-  while (url) {
-    const res = await spotifyFetch(url);
-    if (!res.ok) throw new Error(`GET playlists failed: ${res.status}`);
-
-    const data = await res.json() as Record<string, unknown>;
-    const items = data.items as Array<Record<string, unknown>>;
-
-    for (const item of items) {
-      const owner = item.owner as Record<string, unknown> | undefined;
-      if (owner?.id !== userId) continue;
-      playlists.push({
-        id: item.id as string,
-        name: item.name as string,
-        external_urls: item.external_urls as { spotify: string },
-      });
+/**
+ * Batch-fetch artist genres and merge them onto tracks.
+ * Spotify GET /artists accepts up to 50 IDs per call.
+ */
+export async function enrichWithGenres(tracks: SpotifyTrack[]): Promise<void> {
+  // Collect unique artist IDs
+  const allIds = new Set<string>();
+  for (const t of tracks) {
+    for (const id of t.artistIds) {
+      if (id) allIds.add(id);
     }
-
-    url = (data.next as string) ?? null;
   }
 
-  return playlists;
+  // Fetch in batches of 50
+  const idList = [...allIds];
+  const genreMap = new Map<string, string[]>();
+
+  for (let i = 0; i < idList.length; i += 50) {
+    const batch = idList.slice(i, i + 50);
+    const res = await spotifyFetch(`/artists?ids=${batch.join(",")}`);
+    if (!res.ok) {
+      console.warn(`Warning: artist genre lookup failed (${res.status}), falling back to popularity-only sorting.`);
+      return;
+    }
+    const data = await res.json() as Record<string, unknown>;
+    const artistsArr = data.artists as Array<Record<string, unknown>> | undefined;
+    if (!artistsArr) continue;
+
+    for (const artist of artistsArr) {
+      if (!artist || !artist.id) continue;
+      const genres = (artist.genres as string[]) ?? [];
+      genreMap.set(artist.id as string, genres);
+    }
+  }
+
+  // Merge genres onto tracks (union of all artist genres)
+  for (const t of tracks) {
+    const genreSet = new Set<string>();
+    for (const aid of t.artistIds) {
+      const g = genreMap.get(aid);
+      if (g) g.forEach((genre) => genreSet.add(genre));
+    }
+    t.genres = [...genreSet];
+  }
+
+  const withGenres = tracks.filter((t) => t.genres.length > 0).length;
+  console.log(`Genre data enriched: ${withGenres}/${tracks.length} tracks have genre tags.`);
 }
 
-/** Create a private playlist */
-export async function createPlaylist(
-  userId: string,
-  name: string,
+/** Update a playlist's description */
+export async function updatePlaylistDescription(
+  playlistId: string,
   description: string
-): Promise<SpotifyPlaylist> {
-  const res = await spotifyFetch(`/users/${userId}/playlists`, {
-    method: "POST",
-    body: JSON.stringify({ name, description, public: false }),
+): Promise<void> {
+  const res = await spotifyFetch(`/playlists/${playlistId}`, {
+    method: "PUT",
+    body: JSON.stringify({ description }),
   });
-
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Create playlist failed (${res.status}): ${text}`);
+    throw new Error(`Update playlist description failed (${res.status}): ${text}`);
   }
-
-  const data = await res.json() as Record<string, unknown>;
-  return {
-    id: data.id as string,
-    name: data.name as string,
-    external_urls: data.external_urls as { spotify: string },
-  };
 }
 
 /** Replace all tracks in a playlist (max 100 per call, handles batching) */
 export async function replacePlaylistTracks(playlistId: string, uris: string[]): Promise<void> {
-  // First call replaces; subsequent calls add
   const firstBatch = uris.slice(0, 100);
   const res = await spotifyFetch(`/playlists/${playlistId}/tracks`, {
     method: "PUT",
@@ -183,7 +196,6 @@ export async function replacePlaylistTracks(playlistId: string, uris: string[]):
     throw new Error(`Replace tracks failed (${res.status}): ${text}`);
   }
 
-  // Add remaining in batches of 100
   for (let i = 100; i < uris.length; i += 100) {
     const batch = uris.slice(i, i + 100);
     const addRes = await spotifyFetch(`/playlists/${playlistId}/tracks`, {

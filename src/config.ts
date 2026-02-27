@@ -49,6 +49,7 @@ export interface SpotifyConfig {
   clientSecret: string;
   redirectUri: string;
   scopes: string;
+  playlistId: string;
 }
 
 let _spotifyConfig: SpotifyConfig | null = null;
@@ -62,6 +63,7 @@ export function getSpotifyConfig(): SpotifyConfig {
     clientSecret: requireEnv("SPOTIFY_CLIENT_SECRET"),
     redirectUri: requireEnv("SPOTIFY_REDIRECT_URI"),
     scopes: requireEnv("SPOTIFY_SCOPES"),
+    playlistId: requireEnv("SPOTIFY_PLAYLIST_ID"),
   };
   return _spotifyConfig;
 }

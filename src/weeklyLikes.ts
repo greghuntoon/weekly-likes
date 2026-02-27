@@ -1,6 +1,7 @@
-import { getLikedSongsSince, type SpotifyTrack } from "./spotifyClient.js";
+import { getLikedSongsSince, enrichWithGenres, type SpotifyTrack } from "./spotifyClient.js";
+import { djSort } from "./djSort.js";
 
-/** Get liked songs from the last 7 days, deduplicated by track URI, sorted by addedAt descending */
+/** Get liked songs from the last 7 days, deduplicated, genre-enriched, DJ-sorted for flow */
 export async function fetchWeeklyLikes(): Promise<SpotifyTrack[]> {
   const since = new Date();
   since.setDate(since.getDate() - 7);
@@ -19,9 +20,17 @@ export async function fetchWeeklyLikes(): Promise<SpotifyTrack[]> {
     }
   }
 
-  // Sort by addedAt descending (most recent first)
-  unique.sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
-
   console.log(`Found ${unique.length} unique tracks from the last 7 days.`);
-  return unique;
+
+  if (unique.length === 0) return unique;
+
+  // Fetch artist genres for smart transitions
+  console.log("Fetching artist genres for mix intelligence...");
+  await enrichWithGenres(unique);
+
+  // DJ-sort: genre-aware nearest-neighbor walk for smooth transitions
+  const mixed = djSort(unique);
+  console.log("Tracks DJ-sorted (genre-aware transitions, opener → flow → cooldown).");
+
+  return mixed;
 }

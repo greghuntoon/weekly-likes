@@ -35,22 +35,19 @@ async function cmdWeekly(dryRun: boolean): Promise<void> {
 
     const result = await syncWeeklyPlaylist(tracks, dryRun);
 
-    state.lastPlaylistId = result.playlist.id;
-    state.lastPlaylistName = result.playlist.name;
+    state.lastPlaylistId = result.playlistId;
+    state.lastPlaylistName = "Monday Morning Likes";
     state.lastTrackCount = result.trackCount;
 
-    const playlistUrl = result.playlist.external_urls.spotify;
     writeTweetDraft({
-      playlistUrl,
-      playlistName: result.playlist.name,
+      playlistUrl: result.playlistUrl,
       trackCount: result.trackCount,
     });
 
     console.log("\n--- Summary ---");
-    console.log(`Playlist: ${result.playlist.name}`);
+    console.log(`Playlist: Monday Morning Likes – @greghuntoon`);
     console.log(`Tracks:   ${result.trackCount}`);
-    console.log(`URL:      ${playlistUrl}`);
-    console.log(`Created:  ${result.created ? "yes (new)" : "no (updated existing)"}`);
+    console.log(`URL:      ${result.playlistUrl}`);
     console.log(`Mode:     ${dryRun ? "dry run" : "live"}`);
   } catch (err) {
     state.lastError = err instanceof Error ? err.message : String(err);
