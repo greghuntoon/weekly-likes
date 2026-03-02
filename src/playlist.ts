@@ -18,7 +18,8 @@ export interface PlaylistResult {
 /** Replace tracks in the fixed weekly playlist. */
 export async function syncWeeklyPlaylist(
   tracks: SpotifyTrack[],
-  dryRun: boolean
+  dryRun: boolean,
+  description?: string
 ): Promise<PlaylistResult> {
   const { playlistId } = getSpotifyConfig();
   const playlistUrl = `https://open.spotify.com/playlist/${playlistId}`;
@@ -32,9 +33,9 @@ export async function syncWeeklyPlaylist(
 
   const uris = tracks.map((t) => t.uri);
 
-  // Update description with this week's run date
-  const description = `Monday Morning Likes — auto-updated ${todayDateStr()} — ${tracks.length} tracks`;
-  await updatePlaylistDescription(playlistId, description);
+  const resolvedDescription =
+    description ?? `Monday Morning Likes — auto-updated ${todayDateStr()} — ${tracks.length} tracks`;
+  await updatePlaylistDescription(playlistId, resolvedDescription);
 
   // Replace all tracks
   console.log(`Replacing tracks in playlist ${playlistId}...`);

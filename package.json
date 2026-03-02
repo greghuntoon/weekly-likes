@@ -1,14 +1,18 @@
 {
   "name": "weekly-likes",
-  "version": "1.0.0",
-  "description": "Local-first CLI to create weekly Spotify playlists from liked songs",
+  "version": "2.0.0",
+  "description": "Local-first CLI to create weekly Spotify playlists from liked songs, scored with Last.fm listening data",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "auth": "tsc && node dist/index.js auth",
     "weekly": "tsc && node dist/index.js weekly",
     "dry": "tsc && node dist/index.js dry",
-    "status": "tsc && node dist/index.js status"
+    "status": "tsc && node dist/index.js status",
+    "weekly:v2": "tsc && node dist/index.js weekly-v2",
+    "dry:v2": "tsc && node dist/index.js dry-v2",
+    "explain:v2": "tsc && node dist/index.js explain-v2",
+    "test": "tsc && node --test dist/tests/normalize.test.js dist/tests/scoring.test.js dist/tests/backgroundFilter.test.js"
   },
   "license": "MIT",
   "devDependencies": {

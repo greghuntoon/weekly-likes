@@ -1,4 +1,7 @@
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { dirname } from "path";
 import { getValidToken } from "./spotifyAuth.js";
+import { config } from "./config.js";
 
 const API_BASE = "https://api.spotify.com/v1";
 const MAX_RETRIES = 3;
@@ -54,6 +57,7 @@ export interface SpotifyTrack {
   addedAt: string;
   popularity: number;    // 0-100
   durationMs: number;
+  album: string;
 }
 
 export interface SpotifyUser {
@@ -100,6 +104,7 @@ export async function getLikedSongsSince(since: string): Promise<SpotifyTrack[]>
       if (!track || !track.uri) continue;
 
       const artists = (track.artists as Array<Record<string, unknown>> | undefined) ?? [];
+      const albumObj = track.album as Record<string, unknown> | undefined;
       tracks.push({
         uri: track.uri as string,
         id: track.id as string,
@@ -110,6 +115,7 @@ export async function getLikedSongsSince(since: string): Promise<SpotifyTrack[]>
         addedAt,
         popularity: (track.popularity as number) ?? 50,
         durationMs: (track.duration_ms as number) ?? 200_000,
+        album: (albumObj?.["name"] as string) ?? "",
       });
     }
 
@@ -207,4 +213,80 @@ export async function replacePlaylistTracks(playlistId: string, uris: string[]):
       throw new Error(`Add tracks batch failed (${addRes.status}): ${text}`);
     }
   }
+}
+
+// --- Search cache ---
+
+type SearchCache = Record<string, SpotifyTrack | null>;
+
+function loadSearchCache(): SearchCache {
+  if (!existsSync(config.spotifySearchCachePath)) return {};
+  try {
+    return JSON.parse(readFileSync(config.spotifySearchCachePath, "utf-8")) as SearchCache;
+  } catch {
+    return {};
+  }
+}
+
+function saveSearchCache(cache: SearchCache): void {
+  const dir = dirname(config.spotifySearchCachePath);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(config.spotifySearchCachePath, JSON.stringify(cache, null, 2), "utf-8");
+}
+
+/**
+ * Search Spotify for a track by artist + track name.
+ * Results are cached to data/spotify-search-cache.json (no expiry — track URIs are stable).
+ * Returns null if no match found.
+ */
+export async function searchTrack(
+  artist: string,
+  trackName: string
+): Promise<SpotifyTrack | null> {
+  const cacheKey = `${artist.toLowerCase().trim()}|||${trackName.toLowerCase().trim()}`;
+  const cache = loadSearchCache();
+
+  if (Object.prototype.hasOwnProperty.call(cache, cacheKey)) {
+    return cache[cacheKey] ?? null;
+  }
+
+  // Spotify search: quoted fields improve precision
+  const q = `track:"${trackName}" artist:"${artist}"`;
+  const res = await spotifyFetch(`/search?q=${encodeURIComponent(q)}&type=track&limit=1`);
+
+  if (!res.ok) {
+    cache[cacheKey] = null;
+    saveSearchCache(cache);
+    return null;
+  }
+
+  const data = await res.json() as Record<string, unknown>;
+  const tracksObj = data["tracks"] as Record<string, unknown> | undefined;
+  const items = tracksObj?.["items"] as Array<Record<string, unknown>> | undefined;
+
+  if (!items || items.length === 0) {
+    cache[cacheKey] = null;
+    saveSearchCache(cache);
+    return null;
+  }
+
+  const item = items[0];
+  const artists = (item["artists"] as Array<Record<string, unknown>>) ?? [];
+  const albumObj = item["album"] as Record<string, unknown> | undefined;
+  const track: SpotifyTrack = {
+    uri: item["uri"] as string,
+    id: item["id"] as string,
+    name: (item["name"] as string) ?? trackName,
+    artists: artists.map((a) => (a["name"] as string) ?? "Unknown"),
+    artistIds: artists.map((a) => (a["id"] as string) ?? ""),
+    genres: [], // filled by enrichWithGenres if needed
+    addedAt: new Date().toISOString(),
+    popularity: (item["popularity"] as number) ?? 50,
+    durationMs: (item["duration_ms"] as number) ?? 200_000,
+    album: (albumObj?.["name"] as string) ?? "",
+  };
+
+  cache[cacheKey] = track;
+  saveSearchCache(cache);
+  return track;
 }

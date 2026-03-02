@@ -42,6 +42,9 @@ export const config = {
   outputDir: resolve(PROJECT_ROOT, "output"),
   tokensPath: resolve(PROJECT_ROOT, "data", "tokens.json"),
   statePath: resolve(PROJECT_ROOT, "data", "state.json"),
+  lastfmCachePath: resolve(PROJECT_ROOT, "data", "lastfm-cache.json"),
+  backgroundDenylistPath: resolve(PROJECT_ROOT, "data", "background-denylist.json"),
+  spotifySearchCachePath: resolve(PROJECT_ROOT, "data", "spotify-search-cache.json"),
 } as const;
 
 export interface SpotifyConfig {
@@ -66,4 +69,81 @@ export function getSpotifyConfig(): SpotifyConfig {
     playlistId: requireEnv("SPOTIFY_PLAYLIST_ID"),
   };
   return _spotifyConfig;
+}
+
+// --- Last.fm ---
+
+export interface LastfmConfig {
+  apiKey: string;
+  username: string;
+}
+
+let _lastfmConfig: LastfmConfig | null = null;
+
+/** Load .env and return Last.fm credentials. */
+export function getLastfmConfig(): LastfmConfig {
+  if (_lastfmConfig) return _lastfmConfig;
+  loadEnv();
+  _lastfmConfig = {
+    apiKey: requireEnv("LASTFM_API_KEY"),
+    username: requireEnv("LASTFM_USERNAME"),
+  };
+  return _lastfmConfig;
+}
+
+// --- Scoring weights ---
+
+export interface ScoringWeights {
+  /** Points awarded for being in the Spotify liked set (always 1 for v2 tracks). */
+  spotifyLikeWeight: number;
+  /** Points per Last.fm play in the 7-day window. */
+  lastfmPlayWeight: number;
+  /** Multiplier for recency-decayed play score (each play contributes 0–1 based on age). */
+  recencyWeight: number;
+}
+
+export function getScoringWeights(): ScoringWeights {
+  loadEnv();
+  return {
+    spotifyLikeWeight: parseFloat(process.env["LASTFM_LIKE_WEIGHT"] ?? "5.0"),
+    lastfmPlayWeight: parseFloat(process.env["LASTFM_PLAY_WEIGHT"] ?? "1.0"),
+    recencyWeight: parseFloat(process.env["LASTFM_RECENCY_WEIGHT"] ?? "0.5"),
+  };
+}
+
+// --- v2 candidate pool config ---
+
+export interface V2CandidateConfig {
+  /** Minimum Last.fm play count for a scrobbled track to enter the candidate pool. */
+  lastfmMinPlays: number;
+  /** Max number of Last.fm-only candidates to search for on Spotify per run. */
+  lastfmMaxCandidates: number;
+}
+
+export function getV2CandidateConfig(): V2CandidateConfig {
+  loadEnv();
+  return {
+    lastfmMinPlays: parseInt(process.env["LASTFM_MIN_PLAYS"] ?? "2", 10),
+    lastfmMaxCandidates: parseInt(process.env["LASTFM_MAX_CANDIDATES"] ?? "30", 10),
+  };
+}
+
+// --- Background filter config ---
+
+export interface FilterConfig {
+  /** Plays-per-day rate above which a track is flagged as a potential loop. */
+  loopPlaysPerDayThreshold: number;
+  /** Score penalty applied to flagged tracks. */
+  penaltyAmount: number;
+  /** If cumulative penalty >= this value, the track is fully suppressed. */
+  suppressThreshold: number;
+}
+
+export function getFilterConfig(): FilterConfig {
+  loadEnv();
+  return {
+    loopPlaysPerDayThreshold: parseFloat(process.env["BG_LOOP_THRESHOLD"] ?? "4.0"),
+    penaltyAmount: parseFloat(process.env["BG_PENALTY"] ?? "3.0"),
+    suppressThreshold: parseFloat(process.env["BG_SUPPRESS_THRESHOLD"] ?? "6.0"),
+  };
 }
